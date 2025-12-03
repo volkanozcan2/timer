@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAYAÇ</title>
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏰</text></svg>">
+
+    <!-- Kode Mono Font Yüklemesi -->
+    <link href="https://fonts.googleapis.com/css2?family=Kode+Mono:wght@400..700&display=swap" rel="stylesheet">
+</head>
+
+<body class="bg-black text-white">
+
+    <!-- Canvas for the Starfield Background (Warp Tunnel Effect) -->
+    <canvas id="starfield"></canvas>
+
+    <!-- Main Content (Timer Display and Controls) -->
+    <div id="app-content" class="p-4">
+
+        <!-- Countdown Display (Big, Bold, Slick) -->
+        <div id="timer-display" class="tracking-tighter opacity-100 transition-all duration-300">
+            00:00:00
+        </div>
+
+        <!-- Status label is hidden now, only for initial vertical spacing before being collapsed -->
+        <div id="status-label" class="mb-8 text-lg font-light status-running">
+            <!-- Işınlanmayı başlatmak için bir zaman belirleyin. (Bu metin artık sadece başlangıçta görünür/boşluk için var, hemen gizleniyor) -->
+        </div>
+
+        <!-- Controls (Visible Input and Button) -->
+        <div id="controls" class="control-panel p-6 rounded-xl shadow-2xl max-w-xs w-full">
+            <h2 class="text-xl font-semibold mb-4 text-indigo-300">Bitiş Zamanı</h2>
+            <div class="flex flex-col space-y-4">
+                <input type="time" id="target-time" value="09:00">
+                <button id="start-button"
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg active:scale-95">
+                    Geri Sayımı Başlat
+                </button>
+            </div>
+        </div>
+
+        <!-- Hidden message box for errors (replacing alert()) -->
+        <div id="message-box"
+            class="fixed top-0 left-1/2 -translate-x-1/2 mt-4 p-4 rounded-lg bg-red-700 text-white shadow-lg opacity-0 transition-opacity duration-300 pointer-events-none">
+            Zaman, bugünün ilerleyen bir saati olarak ayarlanmalıdır!
+        </div>
+
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,116 @@
+@import "tailwindcss";
+
+/* Define custom styles for full-screen and centering */
+html,
+body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    /* Ana fontu Kode Mono olarak ayarla, bu genel bir ayardır */
+    font-family: 'Kode Mono', monospace;
+    background-color: #000;
+}
+
+#starfield {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 0;
+    width: 100vw;
+    height: 100vh;
+    transition: opacity 1s ease-in-out;
+    /* Smooth fade for toggle */
+}
+
+/* Styles for the main content layer, forced to cover the canvas */
+#app-content {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    text-align: center;
+    /* Ensure text is perfectly readable over the moving stars */
+    text-shadow: 0 0 10px rgba(0, 0, 0, 0.7);
+    padding: 1rem;
+    /* Padding for mobile */
+}
+
+/* Countdown Display Styles for maximum size */
+#timer-display {
+    /* Yüksek öncelikle fontu uygulayarak Tailwind'i geçersiz kıl */
+    font-family: 'Kode Mono', monospace !important;
+    font-size: 8vw;
+    /* Initial size */
+    line-height: 1;
+    font-weight: 700;
+    /* Font ağırlığı 700 olarak ayarlandı */
+    /* Cubic-bezier function for snappy/elastic easing effect (Only apply to font-size) */
+    transition: font-size 0.8s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+    white-space: nowrap;
+    /* Prevent wrapping */
+}
+
+/* Styles for when the timer is running */
+.running-timer {
+    /* Animasyonun düzgün çalışması için güvenli 60vw boyutu kullanıldı. */
+    font-size: 60vw;
+    margin-bottom: 0;
+    /* Center vertically */
+}
+
+/* Collapse status label when timer runs to ensure perfect vertical centering */
+.status-running {
+    opacity: 0 !important;
+    max-height: 0;
+    margin-bottom: 0 !important;
+    transition: opacity 0.5s, max-height 0.5s, margin 0.5s;
+}
+
+/* Custom style for the time input to look sleek */
+#target-time {
+    color: #000;
+    background-color: #fff;
+    border: none;
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 1.125rem;
+    width: 100%;
+    text-align: center;
+    font-family: 'Inter', sans-serif;
+    /* Inputlarda default font kullanıldı */
+}
+
+/* Custom style for the start button */
+#start-button {
+    transition: all 0.2s;
+    box-shadow: 0 0 10px rgba(79, 70, 229, 0.5);
+    /* Blue glow */
+}
+
+#start-button:hover {
+    box-shadow: 0 0 20px rgba(79, 70, 229, 0.8);
+}
+
+/* Custom style for the control panel backdrop */
+.control-panel {
+    background-color: rgba(31, 41, 55, 0.7);
+    /* Dark semi-transparent background */
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    /* Added smooth transition for fading in/out */
+    transition: opacity 0.8s ease-in-out, transform 0.8s ease-in-out, max-height 0.8s;
+}
+
+/* Hide controls using class for smoother transition and space collapse */
+.controls-hidden {
+    opacity: 0 !important;
+    transform: translateY(20px);
+    max-height: 0;
+    /* Collapse height */
+    padding: 0;
+    margin: 0;
+    pointer-events: none;
+}
