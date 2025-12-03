@@ -8,6 +8,9 @@ let stars = [];
 const NUM_STARS = 100; // Yıldız sayısı önemli ölçüde azaltıldı
 let isStarfieldVisible = true;
 let animationFrameId;
+let serverTimeOffset = 0; // Offset in ms (Server Time - Local Time)
+let showClock = false; // Toggle between countdown and clock
+let clockInterval; // Interval for updating clock when countdown is not active
 
 // Starfield Constants for 3D Projection
 const FOCAL_LENGTH = 500; // Daha yüksek odak uzaklığı
@@ -20,6 +23,7 @@ const targetTimeInput = document.getElementById('target-time');
 const startButton = document.getElementById('start-button');
 const controlsContainer = document.getElementById('controls');
 const messageBox = document.getElementById('message-box');
+let alarmAudio = new Audio('/alarm.mp3'); // Preload audio object
 
 // --- Utility Functions ---
 
@@ -57,7 +61,23 @@ function formatTime(ms) {
     return `${hours}:${minutes}:${seconds}`;
 }
 
-// --- Hyperspace Starfield Animation Logic ---
+/**
+ * Fetches current time from worldtimeapi.org for Europe/Istanbul
+ * and calculates the offset from local time.
+ */
+async function syncTime() {
+    try {
+        const response = await fetch('https://worldtimeapi.org/api/timezone/Europe/Istanbul');
+        const data = await response.json();
+        const serverTime = new Date(data.datetime).getTime();
+        const localTime = Date.now();
+        serverTimeOffset = serverTime - localTime;
+        console.log("Time synced. Offset:", serverTimeOffset, "ms");
+    } catch (error) {
+        console.error("Failed to sync time:", error);
+        // Fallback to local time (offset 0) is automatic
+    }
+}
 
 class Star {
     constructor() {
@@ -150,9 +170,8 @@ function starfieldLoop(timestamp) {
 }
 
 function toggleStarfield(event) {
-    // Ignore clicks on interactive elements
-    if (event.target.closest('button, input, a, .control-panel')) return;
-
+    // Only toggle if the star toggle button is clicked
+    // Note: The global listener is removed, this is now bound to the button
     isStarfieldVisible = !isStarfieldVisible;
 
     if (isStarfieldVisible) {
@@ -170,31 +189,91 @@ function toggleStarfield(event) {
     }
 }
 
+function toggleTimeDisplay() {
+    showClock = !showClock;
+
+    // If countdown is NOT running, we need to manually update the display
+    // If countdown IS running, updateCountdown will handle it on next tick
+    if (!countdownInterval) {
+        if (showClock) {
+            // Start a separate interval to update the clock
+            if (clockInterval) clearInterval(clockInterval);
+            const updateClock = () => {
+                const now = new Date(Date.now() + serverTimeOffset);
+                timerDisplay.textContent = formatTime(now.getTime() % (24 * 60 * 60 * 1000)); // Just HH:MM:SS
+                // Actually formatTime takes ms, but formatTime logic is:
+                // totalSeconds = ms / 1000.
+                // hours = totalSeconds / 3600.
+                // So passing Date.now() directly works if we want total hours since epoch? No.
+                // formatTime expects duration in ms.
+                // We need a formatClock function or adapt formatTime.
+                // Let's make a simple clock formatter.
+                const hours = String(now.getHours()).padStart(2, '0');
+                const minutes = String(now.getMinutes()).padStart(2, '0');
+                const seconds = String(now.getSeconds()).padStart(2, '0');
+                timerDisplay.textContent = `${hours}:${minutes}:${seconds}`;
+            };
+            updateClock(); // Run immediately
+            clockInterval = setInterval(updateClock, 1000);
+        } else {
+            // Stop clock interval and reset display (or leave it as is? "00:00:00"?)
+            if (clockInterval) clearInterval(clockInterval);
+            timerDisplay.textContent = "00:00:00"; // Default state
+        }
+    } else {
+        // Countdown is running, updateCountdown will pick up the change
+        // But we might want to force an immediate update to avoid 1s lag
+        // We can't easily call updateCountdown without targetDate.
+        // It's fine, max 1s delay.
+    }
+}
+
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(e => {
+            console.log(`Error attempting to enable fullscreen: ${e.message}`);
+        });
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+    }
+}
+
 
 // --- Countdown Core Logic ---
 
 function updateCountdown(targetDate) {
-    const now = new Date();
+    const now = new Date(Date.now() + serverTimeOffset);
     let timeDiff = targetDate.getTime() - now.getTime();
 
     if (timeDiff <= 0) {
         // Countdown finished!
         clearInterval(countdownInterval);
-        timerDisplay.textContent = "IŞINLAMA TAMAMLANDI";
+        timerDisplay.textContent = "Zaman doldu";
 
         // Play alarm sound
-        const audio = new Audio('/alarm.mp3');
-        audio.play().catch(e => console.log("Audio play failed:", e));
+        alarmAudio.play().catch(e => console.log("Audio play failed:", e));
 
         // Restore controls and normal display state
         controlsContainer.classList.remove('controls-hidden');
-        statusLabel.textContent = "Hedef zamana varış onaylandı.";
+        statusLabel.textContent = ""; // Clear status text
         statusLabel.classList.remove('status-running'); // Restore status text margin
         timerDisplay.classList.remove('running-timer');
+        startButton.textContent = "Geri Sayımı Yeniden Başlat"; // Update button text
         return;
+
     }
 
-    timerDisplay.textContent = formatTime(timeDiff);
+    if (showClock) {
+        const currentNow = new Date(Date.now() + serverTimeOffset);
+        const hours = String(currentNow.getHours()).padStart(2, '0');
+        const minutes = String(currentNow.getMinutes()).padStart(2, '0');
+        const seconds = String(currentNow.getSeconds()).padStart(2, '0');
+        timerDisplay.textContent = `${hours}:${minutes}:${seconds}`;
+    } else {
+        timerDisplay.textContent = formatTime(timeDiff);
+    }
 }
 
 function startCountdown() {
@@ -206,8 +285,8 @@ function startCountdown() {
 
     const [targetHour, targetMinute] = timeString.split(':').map(Number);
 
-    const now = new Date();
-    let targetDate = new Date();
+    const now = new Date(Date.now() + serverTimeOffset);
+    let targetDate = new Date(Date.now() + serverTimeOffset);
     targetDate.setHours(targetHour, targetMinute, 0, 0);
 
     let timeDiff = targetDate.getTime() - now.getTime();
@@ -225,6 +304,12 @@ function startCountdown() {
 
     // Clear any existing interval
     if (countdownInterval) clearInterval(countdownInterval);
+
+    // Unlock audio on user interaction (mobile/browser policy)
+    alarmAudio.play().then(() => {
+        alarmAudio.pause();
+        alarmAudio.currentTime = 0;
+    }).catch(e => console.log("Audio unlock failed:", e));
 
     // 1. Hide controls and collapse their space smoothly
     controlsContainer.classList.add('controls-hidden');
@@ -252,15 +337,33 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize the starfield animation
     initStarfield();
 
-    // Load today's time plus 1 hour as default suggestion
+    // Sync time with server
+    syncTime();
+
+    // Load today's time plus 45 minutes as default suggestion
     const now = new Date();
-    now.setHours(now.getHours() + 1);
+    now.setMinutes(now.getMinutes() + 45);
     const defaultTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     if (targetTimeInput) targetTimeInput.value = defaultTime;
 
     // Add event listener to start the countdown
     if (startButton) startButton.addEventListener('click', startCountdown);
 
-    // Add global click listener for toggling starfield
-    document.addEventListener('click', toggleStarfield);
+    // Add listener for star toggle button
+    const starToggleBtn = document.getElementById('star-toggle');
+    if (starToggleBtn) {
+        starToggleBtn.addEventListener('click', toggleStarfield);
+    }
+
+    // Add listener for fullscreen toggle button
+    const fullscreenToggleBtn = document.getElementById('fullscreen-toggle');
+    if (fullscreenToggleBtn) {
+        fullscreenToggleBtn.addEventListener('click', toggleFullscreen);
+    }
+
+    // Add listener for timer display toggle
+    if (timerDisplay) {
+        timerDisplay.style.cursor = 'pointer'; // Make it look clickable
+        timerDisplay.addEventListener('click', toggleTimeDisplay);
+    }
 });

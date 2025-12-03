@@ -7,7 +7,8 @@ body {
     margin: 0;
     overflow: hidden;
     /* Ana fontu Kode Mono olarak ayarla, bu genel bir ayardır */
-    font-family: 'Kode Mono', monospace;
+    font-family: 'Roboto Mono', 'Courier New', Courier, monospace;
+    font-weight: 700;
     background-color: #000;
 }
 
@@ -41,8 +42,8 @@ body {
 /* Countdown Display Styles for maximum size */
 #timer-display {
     /* Yüksek öncelikle fontu uygulayarak Tailwind'i geçersiz kıl */
-    font-family: 'Kode Mono', monospace !important;
-    font-size: 8vw;
+    font-family: 'Roboto Mono', 'Courier New', Courier, monospace !important;
+    font-size: 15vw;
     /* Initial size */
     line-height: 1;
     font-weight: 700;
@@ -55,8 +56,8 @@ body {
 
 /* Styles for when the timer is running */
 .running-timer {
-    /* Animasyonun düzgün çalışması için güvenli 60vw boyutu kullanıldı. */
-    font-size: 60vw;
+    /* Animasyonun düzgün çalışması için güvenli 65vw boyutu kullanıldı. */
+    font-size: 65vw;
     margin-bottom: 0;
     /* Center vertically */
 }

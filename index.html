@@ -8,11 +8,11 @@
     <link rel="icon"
         href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏰</text></svg>">
 
-    <!-- Kode Mono Font Yüklemesi -->
-    <link href="https://fonts.googleapis.com/css2?family=Kode+Mono:wght@400..700&display=swap" rel="stylesheet">
+    <!-- Roboto Mono Font Yüklemesi -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@700&display=swap" rel="stylesheet">
 </head>
 
-<body class="bg-black text-white">
+<body class="bg-black text-white font-mono font-bold">
 
     <!-- Canvas for the Starfield Background (Warp Tunnel Effect) -->
     <canvas id="starfield"></canvas>
@@ -21,7 +21,7 @@
     <div id="app-content" class="p-4">
 
         <!-- Countdown Display (Big, Bold, Slick) -->
-        <div id="timer-display" class="tracking-tighter opacity-100 transition-all duration-300">
+        <div id="timer-display" class="tracking-tighter opacity-100 transition-all duration-300 font-bold">
             00:00:00
         </div>
 
@@ -32,9 +32,9 @@
 
         <!-- Controls (Visible Input and Button) -->
         <div id="controls" class="control-panel p-6 rounded-xl shadow-2xl max-w-xs w-full">
-            <h2 class="text-xl font-semibold mb-4 text-indigo-300">Bitiş Zamanı</h2>
+            <h2 class="text-xl font-bold mb-4 text-indigo-300">Bitiş Zamanı</h2>
             <div class="flex flex-col space-y-4">
-                <input type="time" id="target-time" value="09:00">
+                <input type="time" id="target-time" value="09:00" class="font-bold">
                 <button id="start-button"
                     class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg active:scale-95">
                     Geri Sayımı Başlat
@@ -44,8 +44,27 @@
 
         <!-- Hidden message box for errors (replacing alert()) -->
         <div id="message-box"
-            class="fixed top-0 left-1/2 -translate-x-1/2 mt-4 p-4 rounded-lg bg-red-700 text-white shadow-lg opacity-0 transition-opacity duration-300 pointer-events-none">
-            Zaman, bugünün ilerleyen bir saati olarak ayarlanmalıdır!
+            class="fixed top-0 left-1/2 -translate-x-1/2 mt-4 p-4 rounded-lg bg-red-700 text-white shadow-lg opacity-0 transition-opacity duration-300 pointer-events-none font-bold">
+        </div>
+
+        <!-- Starfield Toggle Button -->
+        <div id="star-toggle"
+            class="fixed bottom-4 left-4 opacity-30 hover:opacity-100 cursor-pointer transition-opacity duration-300 z-50">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"
+                stroke="none">
+                <path
+                    d="M12 .587l3.668 7.568 8.332 1.151-6.064 5.828 1.48 8.279-7.416-3.967-7.417 3.967 1.481-8.279-6.064-5.828 8.332-1.151z" />
+            </svg>
+        </div>
+
+        <!-- Fullscreen Toggle Button -->
+        <div id="fullscreen-toggle"
+            class="fixed bottom-4 right-4 opacity-30 hover:opacity-100 cursor-pointer transition-opacity duration-300 z-50">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path
+                    d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+            </svg>
         </div>
 
     </div>
