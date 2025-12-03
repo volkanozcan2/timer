@@ -306,9 +306,12 @@ function startCountdown() {
     if (countdownInterval) clearInterval(countdownInterval);
 
     // Unlock audio on user interaction (mobile/browser policy)
+    // Mute it first so the user doesn't hear the "unlock" play
+    alarmAudio.muted = true;
     alarmAudio.play().then(() => {
         alarmAudio.pause();
         alarmAudio.currentTime = 0;
+        alarmAudio.muted = false; // Unmute for the actual alarm
     }).catch(e => console.log("Audio unlock failed:", e));
 
     // 1. Hide controls and collapse their space smoothly
