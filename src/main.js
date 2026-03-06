@@ -70,6 +70,16 @@ function formatTime(ms) {
     return `${hours}:${minutes}:${seconds}`;
 }
 
+function parse24HourTime(timeString) {
+    const normalized = String(timeString || '').trim();
+    const match = normalized.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+    if (!match) return null;
+    return {
+        hour: Number(match[1]),
+        minute: Number(match[2])
+    };
+}
+
 /**
  * Fetches current time from worldtimeapi.org for Europe/Istanbul
  * and calculates the offset from local time.
@@ -129,12 +139,7 @@ precision highp float;
 uniform vec2 uResolution;
 uniform float uTime;
 
-void main() {
-    vec2 p = (gl_FragCoord.xy - 0.5 * uResolution.xy) / uResolution.x;
-    p.y *= uResolution.y / uResolution.x;
-
-    float time = uTime;
-
+float starfieldValue(vec2 p, float time) {
     float t = atan(p.x, p.y) * 48.0;
     float r = length(p);
     float h = fract(sin(floor(t) * 8.0) * 9.0);
@@ -146,11 +151,31 @@ void main() {
     s.y = (fract(t) - 0.5) * h * r;
 
     float star = (1.0 - length(s) * 400.0) / (c * c);
-    star = max(star, 0.0);
+    return max(star, 0.0);
+}
 
-    // Slight cyan tint so it reads better as a full-page background.
-    vec3 color = vec3(star) * vec3(0.7, 0.9, 1.15);
-    float vignette = smoothstep(1.25, 0.1, length(p));
+vec3 starColorWithChromatic(vec2 p, float time) {
+    vec2 radial = normalize(p + vec2(1e-6));
+    float edge = smoothstep(0.08, 1.05, length(p));
+    float aberration = 0.0002 + 0.0070 * edge * edge;
+    vec2 shift = radial * aberration;
+
+    float starR = starfieldValue(p + shift, time);
+    float starG = starfieldValue(p, time);
+    float starB = starfieldValue(p - shift, time);
+
+    return vec3(starR, starG, starB) * vec3(0.75, 0.95, 1.15);
+}
+
+void main() {
+    vec2 p = (gl_FragCoord.xy - 0.5 * uResolution.xy) / uResolution.x;
+    p.y *= uResolution.y / uResolution.x;
+
+    float time = uTime;
+
+    vec3 color = starColorWithChromatic(p, time);
+
+    float vignette = smoothstep(1.28, 0.08, length(p));
     color *= vignette;
 
     gl_FragColor = vec4(color, 1.0);
@@ -297,6 +322,7 @@ function toggleTimeDisplay() {
     // If countdown IS running, updateCountdown will handle it on next tick
     if (!countdownInterval) {
         if (showClock) {
+            timerDisplay.classList.remove('finished-timer');
             // Start a separate interval to update the clock
             if (clockInterval) clearInterval(clockInterval);
             const updateClock = () => {
@@ -319,6 +345,7 @@ function toggleTimeDisplay() {
         } else {
             // Stop clock interval and reset display (or leave it as is? "00:00:00"?)
             if (clockInterval) clearInterval(clockInterval);
+            timerDisplay.classList.remove('finished-timer');
             timerDisplay.textContent = "00:00:00"; // Default state
         }
     } else {
@@ -388,6 +415,7 @@ function updateCountdown(targetDate) {
         countdownStartMs = null;
         countdownEndMs = null;
         timerDisplay.textContent = "SÜRE BİTTİ";
+        timerDisplay.classList.add('finished-timer');
 
         // Play alarm sound
         alarmAudio.play().catch(e => console.log("Audio play failed:", e));
@@ -415,12 +443,12 @@ function updateCountdown(targetDate) {
 
 function startCountdown() {
     const timeString = targetTimeInput.value;
-    if (!timeString) {
-        showMessage("Lütfen geçerli bir hedef zaman belirleyin.");
+    const parsedTime = parse24HourTime(timeString);
+    if (!parsedTime) {
+        showMessage("Lütfen 24 saat formatında bir zaman girin (HH:MM).");
         return;
     }
-
-    const [targetHour, targetMinute] = timeString.split(':').map(Number);
+    const { hour: targetHour, minute: targetMinute } = parsedTime;
 
     const now = new Date(Date.now() + serverTimeOffset);
     let targetDate = new Date(Date.now() + serverTimeOffset);
@@ -461,6 +489,7 @@ function startCountdown() {
     statusLabel.classList.add('status-running');
 
     // 3. Adjust timer size for the "running" state (easing handles the transition)
+    timerDisplay.classList.remove('finished-timer');
     timerDisplay.classList.add('running-timer');
 
     // 4. Clear status text content (was already removed from initial render)
@@ -472,7 +501,6 @@ function startCountdown() {
     boundUpdate();
     countdownInterval = setInterval(boundUpdate, 1000);
 }
-
 
 // --- Initialization ---
 // window.onload is not ideal for modules, use DOMContentLoaded or just run it

@@ -67,9 +67,11 @@
         <div id="controls" class="control-panel p-6 rounded-xl shadow-2xl max-w-xs w-full">
             <h2 class="text-xl font-bold mb-4 text-indigo-300">Bitiş Zamanı</h2>
             <div class="flex flex-col space-y-4">
-                <input type="time" id="target-time" value="09:00" class="font-bold">
+                <input type="text" id="target-time" value="09:00" class="font-bold" inputmode="numeric"
+                    autocomplete="off" spellcheck="false" maxlength="5" pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                    placeholder="HH:MM" aria-label="24 saat biçiminde bitiş zamanı">
                 <button id="start-button"
-                    class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg active:scale-95">
+                    class="bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 rounded-lg active:scale-95">
                     Geri Sayımı Başlat
                 </button>
             </div>
