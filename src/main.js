@@ -3,18 +3,18 @@ import './style.css'
 // --- Globals ---
 let countdownInterval;
 let starfieldCanvas;
-let ctx;
-let stars = [];
-const NUM_STARS = 100; // Yıldız sayısı önemli ölçüde azaltıldı
+let gl;
+let starProgram;
+let starVertexBuffer;
+let uTimeLocation;
+let uResolutionLocation;
+let uCountdownLocation;
 let isStarfieldVisible = true;
 let animationFrameId;
+let starfieldStartTime = 0;
 let serverTimeOffset = 0; // Offset in ms (Server Time - Local Time)
 let showClock = false; // Toggle between countdown and clock
 let clockInterval; // Interval for updating clock when countdown is not active
-
-// Starfield Constants for 3D Projection
-const FOCAL_LENGTH = 500; // Daha yüksek odak uzaklığı
-const MAX_Z = FOCAL_LENGTH + 250;
 
 // --- DOM Elements ---
 const timerDisplay = document.getElementById('timer-display');
@@ -79,105 +79,185 @@ async function syncTime() {
     }
 }
 
-class Star {
-    constructor() {
-        this.reset();
-    }
+async function revealAppShell() {
+    const root = document.documentElement;
+    if (root.classList.contains('app-ready')) return;
 
-    // Initialize star with 3D coordinates (x, y, z)
-    reset() {
-        // Generate X and Y coordinates relative to the center (0, 0)
-        this.x3D = (Math.random() - 0.5) * starfieldCanvas.width * 2;
-        this.y3D = (Math.random() - 0.5) * starfieldCanvas.height * 2;
-        // Start far away
-        this.z = Math.random() * MAX_Z; // Start at random Z to populate the tunnel
-        this.baseSpeed = Math.random() * 1.5 + 2; // Hız daha da azaltıldı
-    }
+    const reveal = () => {
+        root.classList.remove('app-booting');
+        root.classList.add('app-ready');
+    };
 
-    // Calculate 2D screen coordinates using perspective projection
-    project() {
-        // Calculate 2D position based on Z-depth (closer stars are further from center)
-        const scale = FOCAL_LENGTH / this.z;
-        this.screenX = this.x3D * scale + starfieldCanvas.width / 2;
-        this.screenY = this.y3D * scale + starfieldCanvas.height / 2;
-        this.radius = Math.max(0.1, 1.5 * scale); // Yıldız boyutu daha da küçültüldü (0.1 minimum)
-        this.opacity = Math.min(1.0, 1.0 - (this.z / MAX_Z)); // Fade in as it approaches
-    }
-
-    draw() {
-        ctx.beginPath();
-        ctx.arc(this.screenX, this.screenY, this.radius, 0, Math.PI * 2);
-        // Use a subtle white color
-        ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity})`;
-        ctx.fill();
-    }
-
-    update(deltaTime) {
-        // Move star closer to the camera (decrease Z)
-        this.z -= this.baseSpeed * (deltaTime / 16); // Normalize speed
-
-        // If star has passed the camera or is out of view, reset it to the far distance
-        if (this.z <= 1 ||
-            this.screenX < 0 || this.screenX > starfieldCanvas.width ||
-            this.screenY < 0 || this.screenY > starfieldCanvas.height) {
-            this.reset();
+    const fontsReady = document.fonts?.ready ?? Promise.resolve();
+    const pageLoaded = new Promise(resolve => {
+        if (document.readyState === 'complete') {
+            resolve();
+            return;
         }
+        window.addEventListener('load', () => resolve(), { once: true });
+    });
+    const safetyTimeout = new Promise(resolve => setTimeout(resolve, 3000));
 
-        this.project();
+    try {
+        await Promise.race([Promise.all([fontsReady, pageLoaded]), safetyTimeout]);
+    } catch {
+        // Ignore and reveal anyway.
     }
+
+    requestAnimationFrame(reveal);
+}
+
+const STARFIELD_VERTEX_SHADER = `
+attribute vec2 aPosition;
+void main() {
+    gl_Position = vec4(aPosition, 0.0, 1.0);
+}
+`;
+
+const STARFIELD_FRAGMENT_SHADER = `
+precision highp float;
+
+uniform vec2 uResolution;
+uniform float uTime;
+uniform float uCountdown;
+
+void main() {
+    vec2 p = (gl_FragCoord.xy - 0.5 * uResolution.xy) / uResolution.x;
+    p.y *= uResolution.y / uResolution.x;
+
+    // Equivalent to iTime in Shadertoy, with optional countdown intensity boost.
+    float time = uTime * mix(1.0, 1.45, uCountdown);
+
+    float t = atan(p.x, p.y) * 48.0;
+    float r = length(p);
+    float h = fract(sin(floor(t) * 8.0) * 9.0);
+    float o = h * 9.0 + time;
+    float c = floor(h / max(r, 0.0008) + o) + 0.5 - o;
+
+    vec2 s;
+    s.x = (h / c) - r;
+    s.y = (fract(t) - 0.5) * h * r;
+
+    float star = (1.0 - length(s) * 400.0) / (c * c);
+    star = max(star, 0.0);
+
+    // Slight cyan tint so it reads better as a full-page background.
+    vec3 color = vec3(star) * vec3(0.7, 0.9, 1.15);
+    float vignette = smoothstep(1.25, 0.1, length(p));
+    color *= vignette;
+
+    gl_FragColor = vec4(color, 1.0);
+}
+`;
+
+function createShader(glContext, type, source) {
+    const shader = glContext.createShader(type);
+    if (!shader) return null;
+    glContext.shaderSource(shader, source);
+    glContext.compileShader(shader);
+
+    if (!glContext.getShaderParameter(shader, glContext.COMPILE_STATUS)) {
+        console.error("Shader compile error:", glContext.getShaderInfoLog(shader));
+        glContext.deleteShader(shader);
+        return null;
+    }
+
+    return shader;
+}
+
+function createProgram(glContext, vertexSource, fragmentSource) {
+    const vertexShader = createShader(glContext, glContext.VERTEX_SHADER, vertexSource);
+    const fragmentShader = createShader(glContext, glContext.FRAGMENT_SHADER, fragmentSource);
+    if (!vertexShader || !fragmentShader) return null;
+
+    const program = glContext.createProgram();
+    if (!program) return null;
+
+    glContext.attachShader(program, vertexShader);
+    glContext.attachShader(program, fragmentShader);
+    glContext.linkProgram(program);
+    glContext.deleteShader(vertexShader);
+    glContext.deleteShader(fragmentShader);
+
+    if (!glContext.getProgramParameter(program, glContext.LINK_STATUS)) {
+        console.error("Program link error:", glContext.getProgramInfoLog(program));
+        glContext.deleteProgram(program);
+        return null;
+    }
+
+    return program;
 }
 
 function initStarfield() {
     starfieldCanvas = document.getElementById('starfield');
-    ctx = starfieldCanvas.getContext('2d');
-    resizeCanvas();
+    if (!starfieldCanvas) return;
 
-    // Populate stars array
-    for (let i = 0; i < NUM_STARS; i++) {
-        stars.push(new Star());
+    gl = starfieldCanvas.getContext('webgl', { antialias: true, alpha: false });
+    if (!gl) {
+        console.error("WebGL not supported in this browser.");
+        return;
     }
 
+    starProgram = createProgram(gl, STARFIELD_VERTEX_SHADER, STARFIELD_FRAGMENT_SHADER);
+    if (!starProgram) return;
+
+    const aPositionLocation = gl.getAttribLocation(starProgram, 'aPosition');
+    uTimeLocation = gl.getUniformLocation(starProgram, 'uTime');
+    uResolutionLocation = gl.getUniformLocation(starProgram, 'uResolution');
+    uCountdownLocation = gl.getUniformLocation(starProgram, 'uCountdown');
+
+    starVertexBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, starVertexBuffer);
+    gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([
+            -1, -1,
+            3, -1,
+            -1, 3
+        ]),
+        gl.STATIC_DRAW
+    );
+
+    gl.useProgram(starProgram);
+    gl.enableVertexAttribArray(aPositionLocation);
+    gl.vertexAttribPointer(aPositionLocation, 2, gl.FLOAT, false, 0, 0);
+
+    resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
-    // Initial projection of all stars
-    stars.forEach(star => star.project());
-    starfieldLoop(); // Start the animation loop
+    starfieldStartTime = performance.now();
+    animationFrameId = requestAnimationFrame(starfieldLoop);
 }
 
 function resizeCanvas() {
-    // Update canvas dimensions to match viewport
-    starfieldCanvas.width = window.innerWidth;
-    starfieldCanvas.height = window.innerHeight;
-    // Reproject stars to the new center
-    stars.forEach(star => star.project());
+    if (!starfieldCanvas || !gl) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    starfieldCanvas.width = Math.floor(window.innerWidth * dpr);
+    starfieldCanvas.height = Math.floor(window.innerHeight * dpr);
+    starfieldCanvas.style.width = '100vw';
+    starfieldCanvas.style.height = '100vh';
+    gl.viewport(0, 0, starfieldCanvas.width, starfieldCanvas.height);
 }
 
-let lastTime = 0;
 function starfieldLoop(timestamp) {
-    if (!lastTime) lastTime = timestamp;
-    const deltaTime = timestamp - lastTime;
-    lastTime = timestamp;
+    if (!gl || !starProgram) return;
+    const elapsed = (timestamp - starfieldStartTime) / 1000;
 
-    // Clear the canvas with a very low transparent overlay for minimal motion blur
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)'; // Çok düşük trail/hareket bulanıklığı için
-    ctx.fillRect(0, 0, starfieldCanvas.width, starfieldCanvas.height);
-
-    stars.forEach(star => {
-        star.update(deltaTime);
-        star.draw();
-    });
+    gl.useProgram(starProgram);
+    gl.uniform1f(uTimeLocation, elapsed);
+    gl.uniform2f(uResolutionLocation, starfieldCanvas.width, starfieldCanvas.height);
+    gl.uniform1f(uCountdownLocation, countdownInterval ? 1.0 : 0.0);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     animationFrameId = requestAnimationFrame(starfieldLoop);
 }
 
-function toggleStarfield(event) {
-    // Only toggle if the star toggle button is clicked
-    // Note: The global listener is removed, this is now bound to the button
+function toggleStarfield() {
     isStarfieldVisible = !isStarfieldVisible;
 
     if (isStarfieldVisible) {
         starfieldCanvas.style.opacity = '1';
-        if (!animationFrameId) {
-            lastTime = 0; // Reset time to avoid huge delta
+        if (!animationFrameId && gl) {
+            starfieldStartTime = performance.now();
             animationFrameId = requestAnimationFrame(starfieldLoop);
         }
     } else {
@@ -337,6 +417,8 @@ function startCountdown() {
 // --- Initialization ---
 // window.onload is not ideal for modules, use DOMContentLoaded or just run it
 document.addEventListener('DOMContentLoaded', () => {
+    revealAppShell();
+
     // Initialize the starfield animation
     initStarfield();
 

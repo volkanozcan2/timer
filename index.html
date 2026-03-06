@@ -1,18 +1,53 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="tr" class="app-booting">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
     <title>SAYAÇ</title>
     <link rel="icon"
         href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏰</text></svg>">
 
+    <style>
+        html,
+        body {
+            margin: 0;
+            height: 100%;
+            overflow: hidden;
+            background: #000 !important;
+            color: #fff;
+            font-family: 'Roboto Mono', 'Courier New', Courier, monospace;
+        }
+
+        #starfield {
+            background: #000;
+        }
+
+        .app-booting #app-content,
+        .app-booting #starfield {
+            opacity: 0;
+        }
+
+        .app-ready #app-content,
+        .app-ready #starfield {
+            opacity: 1;
+            transition: opacity .25s ease-out;
+        }
+    </style>
     <!-- Roboto Mono Font Yüklemesi -->
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@700&display=swap" rel="stylesheet">
+    <noscript>
+        <style>
+            .app-booting #app-content,
+            .app-booting #starfield {
+                opacity: 1 !important;
+            }
+        </style>
+    </noscript>
 </head>
 
-<body class="bg-black text-white font-mono font-bold">
+<body class="bg-black text-white font-mono font-bold" style="background:#000;color:#fff;">
 
     <!-- Canvas for the Starfield Background (Warp Tunnel Effect) -->
     <canvas id="starfield"></canvas>
