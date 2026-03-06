@@ -8,13 +8,22 @@ let starProgram;
 let starVertexBuffer;
 let uTimeLocation;
 let uResolutionLocation;
-let uCountdownLocation;
 let isStarfieldVisible = true;
 let animationFrameId;
-let starfieldStartTime = 0;
+let lastFrameTime = 0;
+let shaderTime = 0;
 let serverTimeOffset = 0; // Offset in ms (Server Time - Local Time)
 let showClock = false; // Toggle between countdown and clock
 let clockInterval; // Interval for updating clock when countdown is not active
+let userStarSpeed = 0.12;
+let mappedStarSpeed = 0.12;
+let isSpeedDragActive = false;
+let countdownStartMs = null;
+let countdownEndMs = null;
+
+const STAR_SPEED_MIN = 0.12;
+const STAR_SPEED_MAX = 0.9;
+const COUNTDOWN_SPEED_END_CAP = 0.985;
 
 // --- DOM Elements ---
 const timerDisplay = document.getElementById('timer-display');
@@ -59,6 +68,16 @@ function formatTime(ms) {
     const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
     const seconds = String(totalSeconds % 60).padStart(2, '0');
     return `${hours}:${minutes}:${seconds}`;
+}
+
+function parse24HourTime(timeString) {
+    const normalized = String(timeString || '').trim();
+    const match = normalized.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+    if (!match) return null;
+    return {
+        hour: Number(match[1]),
+        minute: Number(match[2])
+    };
 }
 
 /**
@@ -119,15 +138,8 @@ precision highp float;
 
 uniform vec2 uResolution;
 uniform float uTime;
-uniform float uCountdown;
 
-void main() {
-    vec2 p = (gl_FragCoord.xy - 0.5 * uResolution.xy) / uResolution.x;
-    p.y *= uResolution.y / uResolution.x;
-
-    // Equivalent to iTime in Shadertoy, with optional countdown intensity boost.
-    float time = uTime * mix(1.0, 1.45, uCountdown);
-
+float starfieldValue(vec2 p, float time) {
     float t = atan(p.x, p.y) * 48.0;
     float r = length(p);
     float h = fract(sin(floor(t) * 8.0) * 9.0);
@@ -139,11 +151,31 @@ void main() {
     s.y = (fract(t) - 0.5) * h * r;
 
     float star = (1.0 - length(s) * 400.0) / (c * c);
-    star = max(star, 0.0);
+    return max(star, 0.0);
+}
 
-    // Slight cyan tint so it reads better as a full-page background.
-    vec3 color = vec3(star) * vec3(0.7, 0.9, 1.15);
-    float vignette = smoothstep(1.25, 0.1, length(p));
+vec3 starColorWithChromatic(vec2 p, float time) {
+    vec2 radial = normalize(p + vec2(1e-6));
+    float edge = smoothstep(0.08, 1.05, length(p));
+    float aberration = 0.0002 + 0.0070 * edge * edge;
+    vec2 shift = radial * aberration;
+
+    float starR = starfieldValue(p + shift, time);
+    float starG = starfieldValue(p, time);
+    float starB = starfieldValue(p - shift, time);
+
+    return vec3(starR, starG, starB) * vec3(0.75, 0.95, 1.15);
+}
+
+void main() {
+    vec2 p = (gl_FragCoord.xy - 0.5 * uResolution.xy) / uResolution.x;
+    p.y *= uResolution.y / uResolution.x;
+
+    float time = uTime;
+
+    vec3 color = starColorWithChromatic(p, time);
+
+    float vignette = smoothstep(1.28, 0.08, length(p));
     color *= vignette;
 
     gl_FragColor = vec4(color, 1.0);
@@ -204,7 +236,6 @@ function initStarfield() {
     const aPositionLocation = gl.getAttribLocation(starProgram, 'aPosition');
     uTimeLocation = gl.getUniformLocation(starProgram, 'uTime');
     uResolutionLocation = gl.getUniformLocation(starProgram, 'uResolution');
-    uCountdownLocation = gl.getUniformLocation(starProgram, 'uCountdown');
 
     starVertexBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, starVertexBuffer);
@@ -224,7 +255,8 @@ function initStarfield() {
 
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
-    starfieldStartTime = performance.now();
+    lastFrameTime = 0;
+    shaderTime = 0;
     animationFrameId = requestAnimationFrame(starfieldLoop);
 }
 
@@ -240,12 +272,26 @@ function resizeCanvas() {
 
 function starfieldLoop(timestamp) {
     if (!gl || !starProgram) return;
-    const elapsed = (timestamp - starfieldStartTime) / 1000;
+    if (!lastFrameTime) lastFrameTime = timestamp;
+    const deltaTime = Math.min((timestamp - lastFrameTime) / 1000, 0.05);
+    lastFrameTime = timestamp;
+
+    let targetStarSpeed = mappedStarSpeed;
+    if (countdownStartMs !== null && countdownEndMs !== null && countdownEndMs > countdownStartMs) {
+        const nowMs = Date.now() + serverTimeOffset;
+        const progressRaw = (nowMs - countdownStartMs) / (countdownEndMs - countdownStartMs);
+        const progress = clamp(progressRaw, 0, COUNTDOWN_SPEED_END_CAP);
+        targetStarSpeed = STAR_SPEED_MIN + (mappedStarSpeed - STAR_SPEED_MIN) * progress;
+    }
+
+    // Smoothly approach requested speed to avoid visual jumps.
+    const smoothFactor = 1.0 - Math.exp(-12.0 * deltaTime);
+    userStarSpeed += (targetStarSpeed - userStarSpeed) * smoothFactor;
+    shaderTime += deltaTime * userStarSpeed;
 
     gl.useProgram(starProgram);
-    gl.uniform1f(uTimeLocation, elapsed);
+    gl.uniform1f(uTimeLocation, shaderTime);
     gl.uniform2f(uResolutionLocation, starfieldCanvas.width, starfieldCanvas.height);
-    gl.uniform1f(uCountdownLocation, countdownInterval ? 1.0 : 0.0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     animationFrameId = requestAnimationFrame(starfieldLoop);
@@ -257,7 +303,7 @@ function toggleStarfield() {
     if (isStarfieldVisible) {
         starfieldCanvas.style.opacity = '1';
         if (!animationFrameId && gl) {
-            starfieldStartTime = performance.now();
+            lastFrameTime = 0;
             animationFrameId = requestAnimationFrame(starfieldLoop);
         }
     } else {
@@ -276,6 +322,7 @@ function toggleTimeDisplay() {
     // If countdown IS running, updateCountdown will handle it on next tick
     if (!countdownInterval) {
         if (showClock) {
+            timerDisplay.classList.remove('finished-timer');
             // Start a separate interval to update the clock
             if (clockInterval) clearInterval(clockInterval);
             const updateClock = () => {
@@ -298,6 +345,7 @@ function toggleTimeDisplay() {
         } else {
             // Stop clock interval and reset display (or leave it as is? "00:00:00"?)
             if (clockInterval) clearInterval(clockInterval);
+            timerDisplay.classList.remove('finished-timer');
             timerDisplay.textContent = "00:00:00"; // Default state
         }
     } else {
@@ -320,6 +368,39 @@ function toggleFullscreen() {
     }
 }
 
+function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+}
+
+function setupHiddenSpeedControls() {
+    const speedFromClientX = (clientX) => {
+        const t = clamp(clientX / Math.max(window.innerWidth, 1), 0, 1);
+        return STAR_SPEED_MIN + t * (STAR_SPEED_MAX - STAR_SPEED_MIN);
+    };
+
+    const onPointerDown = (event) => {
+        if (event.clientY < window.innerHeight * 0.9) return;
+
+        isSpeedDragActive = true;
+        mappedStarSpeed = speedFromClientX(event.clientX);
+    };
+
+    const onPointerMove = (event) => {
+        if (!isSpeedDragActive) return;
+        // Absolute horizontal mapping while dragging in bottom zone.
+        mappedStarSpeed = speedFromClientX(event.clientX);
+    };
+
+    const onPointerEnd = () => {
+        isSpeedDragActive = false;
+    };
+
+    window.addEventListener('pointerdown', onPointerDown, { passive: true, capture: true });
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
+    window.addEventListener('pointerup', onPointerEnd, { passive: true });
+    window.addEventListener('pointercancel', onPointerEnd, { passive: true });
+}
+
 
 // --- Countdown Core Logic ---
 
@@ -330,7 +411,11 @@ function updateCountdown(targetDate) {
     if (timeDiff <= 0) {
         // Countdown finished!
         clearInterval(countdownInterval);
-        timerDisplay.textContent = "Zaman doldu";
+        countdownInterval = null;
+        countdownStartMs = null;
+        countdownEndMs = null;
+        timerDisplay.textContent = "SÜRE BİTTİ";
+        timerDisplay.classList.add('finished-timer');
 
         // Play alarm sound
         alarmAudio.play().catch(e => console.log("Audio play failed:", e));
@@ -358,12 +443,12 @@ function updateCountdown(targetDate) {
 
 function startCountdown() {
     const timeString = targetTimeInput.value;
-    if (!timeString) {
-        showMessage("Lütfen geçerli bir hedef zaman belirleyin.");
+    const parsedTime = parse24HourTime(timeString);
+    if (!parsedTime) {
+        showMessage("Lütfen 24 saat formatında bir zaman girin (HH:MM).");
         return;
     }
-
-    const [targetHour, targetMinute] = timeString.split(':').map(Number);
+    const { hour: targetHour, minute: targetMinute } = parsedTime;
 
     const now = new Date(Date.now() + serverTimeOffset);
     let targetDate = new Date(Date.now() + serverTimeOffset);
@@ -384,6 +469,9 @@ function startCountdown() {
 
     // Clear any existing interval
     if (countdownInterval) clearInterval(countdownInterval);
+    countdownStartMs = now.getTime();
+    countdownEndMs = targetDate.getTime();
+    userStarSpeed = STAR_SPEED_MIN;
 
     // Unlock audio on user interaction (mobile/browser policy)
     // Mute it first so the user doesn't hear the "unlock" play
@@ -401,6 +489,7 @@ function startCountdown() {
     statusLabel.classList.add('status-running');
 
     // 3. Adjust timer size for the "running" state (easing handles the transition)
+    timerDisplay.classList.remove('finished-timer');
     timerDisplay.classList.add('running-timer');
 
     // 4. Clear status text content (was already removed from initial render)
@@ -413,7 +502,6 @@ function startCountdown() {
     countdownInterval = setInterval(boundUpdate, 1000);
 }
 
-
 // --- Initialization ---
 // window.onload is not ideal for modules, use DOMContentLoaded or just run it
 document.addEventListener('DOMContentLoaded', () => {
@@ -421,6 +509,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize the starfield animation
     initStarfield();
+    setupHiddenSpeedControls();
 
     // Sync time with server
     syncTime();

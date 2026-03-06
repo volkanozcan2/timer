@@ -6,10 +6,18 @@ body {
     height: 100%;
     margin: 0;
     overflow: hidden;
-    /* Ana fontu Kode Mono olarak ayarla, bu genel bir ayardır */
-    font-family: 'Roboto Mono', 'Courier New', Courier, monospace;
+    /* Fast local monospace stack, no network font dependency */
+    font-family: 'SF Mono', 'JetBrains Mono', 'IBM Plex Mono', 'Cascadia Mono', 'Fira Code', 'Menlo', 'Consolas', 'Liberation Mono', monospace;
     font-weight: 700;
     background-color: #000;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+input,
+button {
+    user-select: auto;
+    -webkit-user-select: auto;
 }
 
 #starfield {
@@ -42,7 +50,7 @@ body {
 /* Countdown Display Styles for maximum size */
 #timer-display {
     /* Yüksek öncelikle fontu uygulayarak Tailwind'i geçersiz kıl */
-    font-family: 'Roboto Mono', 'Courier New', Courier, monospace !important;
+    font-family: 'SF Mono', 'JetBrains Mono', 'IBM Plex Mono', 'Cascadia Mono', 'Fira Code', 'Menlo', 'Consolas', 'Liberation Mono', monospace !important;
     font-size: 15vw;
     /* Initial size */
     line-height: 1;
