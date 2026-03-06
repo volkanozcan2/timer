@@ -126,7 +126,7 @@ void main() {
     p.y *= uResolution.y / uResolution.x;
 
     // Equivalent to iTime in Shadertoy, with optional countdown intensity boost.
-    float time = uTime * mix(1.0, 1.45, uCountdown);
+    float time = uTime * mix(0.72, 1.05, uCountdown);
 
     float t = atan(p.x, p.y) * 48.0;
     float r = length(p);
