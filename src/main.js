@@ -8,13 +8,22 @@ let starProgram;
 let starVertexBuffer;
 let uTimeLocation;
 let uResolutionLocation;
-let uCountdownLocation;
 let isStarfieldVisible = true;
 let animationFrameId;
-let starfieldStartTime = 0;
+let lastFrameTime = 0;
+let shaderTime = 0;
 let serverTimeOffset = 0; // Offset in ms (Server Time - Local Time)
 let showClock = false; // Toggle between countdown and clock
 let clockInterval; // Interval for updating clock when countdown is not active
+let userStarSpeed = 0.12;
+let mappedStarSpeed = 0.12;
+let isSpeedDragActive = false;
+let countdownStartMs = null;
+let countdownEndMs = null;
+
+const STAR_SPEED_MIN = 0.12;
+const STAR_SPEED_MAX = 0.9;
+const COUNTDOWN_SPEED_END_CAP = 0.985;
 
 // --- DOM Elements ---
 const timerDisplay = document.getElementById('timer-display');
@@ -119,14 +128,12 @@ precision highp float;
 
 uniform vec2 uResolution;
 uniform float uTime;
-uniform float uCountdown;
 
 void main() {
     vec2 p = (gl_FragCoord.xy - 0.5 * uResolution.xy) / uResolution.x;
     p.y *= uResolution.y / uResolution.x;
 
-    // Equivalent to iTime in Shadertoy, with optional countdown intensity boost.
-    float time = uTime * mix(0.72, 1.05, uCountdown);
+    float time = uTime;
 
     float t = atan(p.x, p.y) * 48.0;
     float r = length(p);
@@ -204,7 +211,6 @@ function initStarfield() {
     const aPositionLocation = gl.getAttribLocation(starProgram, 'aPosition');
     uTimeLocation = gl.getUniformLocation(starProgram, 'uTime');
     uResolutionLocation = gl.getUniformLocation(starProgram, 'uResolution');
-    uCountdownLocation = gl.getUniformLocation(starProgram, 'uCountdown');
 
     starVertexBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, starVertexBuffer);
@@ -224,7 +230,8 @@ function initStarfield() {
 
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
-    starfieldStartTime = performance.now();
+    lastFrameTime = 0;
+    shaderTime = 0;
     animationFrameId = requestAnimationFrame(starfieldLoop);
 }
 
@@ -240,12 +247,26 @@ function resizeCanvas() {
 
 function starfieldLoop(timestamp) {
     if (!gl || !starProgram) return;
-    const elapsed = (timestamp - starfieldStartTime) / 1000;
+    if (!lastFrameTime) lastFrameTime = timestamp;
+    const deltaTime = Math.min((timestamp - lastFrameTime) / 1000, 0.05);
+    lastFrameTime = timestamp;
+
+    let targetStarSpeed = mappedStarSpeed;
+    if (countdownStartMs !== null && countdownEndMs !== null && countdownEndMs > countdownStartMs) {
+        const nowMs = Date.now() + serverTimeOffset;
+        const progressRaw = (nowMs - countdownStartMs) / (countdownEndMs - countdownStartMs);
+        const progress = clamp(progressRaw, 0, COUNTDOWN_SPEED_END_CAP);
+        targetStarSpeed = STAR_SPEED_MIN + (mappedStarSpeed - STAR_SPEED_MIN) * progress;
+    }
+
+    // Smoothly approach requested speed to avoid visual jumps.
+    const smoothFactor = 1.0 - Math.exp(-12.0 * deltaTime);
+    userStarSpeed += (targetStarSpeed - userStarSpeed) * smoothFactor;
+    shaderTime += deltaTime * userStarSpeed;
 
     gl.useProgram(starProgram);
-    gl.uniform1f(uTimeLocation, elapsed);
+    gl.uniform1f(uTimeLocation, shaderTime);
     gl.uniform2f(uResolutionLocation, starfieldCanvas.width, starfieldCanvas.height);
-    gl.uniform1f(uCountdownLocation, countdownInterval ? 1.0 : 0.0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     animationFrameId = requestAnimationFrame(starfieldLoop);
@@ -257,7 +278,7 @@ function toggleStarfield() {
     if (isStarfieldVisible) {
         starfieldCanvas.style.opacity = '1';
         if (!animationFrameId && gl) {
-            starfieldStartTime = performance.now();
+            lastFrameTime = 0;
             animationFrameId = requestAnimationFrame(starfieldLoop);
         }
     } else {
@@ -320,6 +341,39 @@ function toggleFullscreen() {
     }
 }
 
+function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+}
+
+function setupHiddenSpeedControls() {
+    const speedFromClientX = (clientX) => {
+        const t = clamp(clientX / Math.max(window.innerWidth, 1), 0, 1);
+        return STAR_SPEED_MIN + t * (STAR_SPEED_MAX - STAR_SPEED_MIN);
+    };
+
+    const onPointerDown = (event) => {
+        if (event.clientY < window.innerHeight * 0.9) return;
+
+        isSpeedDragActive = true;
+        mappedStarSpeed = speedFromClientX(event.clientX);
+    };
+
+    const onPointerMove = (event) => {
+        if (!isSpeedDragActive) return;
+        // Absolute horizontal mapping while dragging in bottom zone.
+        mappedStarSpeed = speedFromClientX(event.clientX);
+    };
+
+    const onPointerEnd = () => {
+        isSpeedDragActive = false;
+    };
+
+    window.addEventListener('pointerdown', onPointerDown, { passive: true, capture: true });
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
+    window.addEventListener('pointerup', onPointerEnd, { passive: true });
+    window.addEventListener('pointercancel', onPointerEnd, { passive: true });
+}
+
 
 // --- Countdown Core Logic ---
 
@@ -330,7 +384,10 @@ function updateCountdown(targetDate) {
     if (timeDiff <= 0) {
         // Countdown finished!
         clearInterval(countdownInterval);
-        timerDisplay.textContent = "Zaman doldu";
+        countdownInterval = null;
+        countdownStartMs = null;
+        countdownEndMs = null;
+        timerDisplay.textContent = "SÜRE BİTTİ";
 
         // Play alarm sound
         alarmAudio.play().catch(e => console.log("Audio play failed:", e));
@@ -384,6 +441,9 @@ function startCountdown() {
 
     // Clear any existing interval
     if (countdownInterval) clearInterval(countdownInterval);
+    countdownStartMs = now.getTime();
+    countdownEndMs = targetDate.getTime();
+    userStarSpeed = STAR_SPEED_MIN;
 
     // Unlock audio on user interaction (mobile/browser policy)
     // Mute it first so the user doesn't hear the "unlock" play
@@ -421,6 +481,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize the starfield animation
     initStarfield();
+    setupHiddenSpeedControls();
 
     // Sync time with server
     syncTime();
